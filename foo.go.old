@@ -1,0 +1,7 @@
+package main
+
+func main() {
+	in := make(chan int, 100)
+	out := make(chan int, 100)
+
+}
