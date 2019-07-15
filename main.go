@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"sync"
 )
 
 type job func(in, out chan interface{})
@@ -18,12 +19,12 @@ func main() {
 		}),
 		job(func(in, out chan interface{}) {
 			for val := range in {
-				out <- val
+				out <- val.(int) + 1
 			}
 		}),
 		job(func(in, out chan interface{}) {
 			for val := range in {
-				out <- val
+				out <- val.(int) * 2
 			}
 		}),
 		job(func(in, out chan interface{}) {
@@ -38,41 +39,58 @@ func main() {
 		}),
 	}
 
-	workerInput := make(chan interface{}, 2)
-	combination := make(chan interface{})
-	for i := 0; i < 100; i++ {
-		go func(in <-chan interface{}) {
-			for input := range in {
-				inCh := make(chan interface{})
-				outCh := make(chan interface{}, 1)
-				outCh <- input
-				close(outCh)
-				for i := 1; i < len(jobs)-1; i++ {
-					inCh, outCh = outCh, make(chan interface{})
-					go func(i int, in, out chan interface{}) {
-						jobs[i](in, out)
-						fmt.Println("foo")
-						close(out)
-					}(i, inCh, outCh)
-				}
-				combination <- (<-outCh)
+	gen := func() chan interface{} {
+		out := make(chan interface{})
+		go func() {
+			jobs[0](nil, out)
+			close(out)
+		}()
+		return out
+	}
+
+	in := gen()
+
+	calc := func(i int, in chan interface{}) chan interface{} {
+		out := make(chan interface{})
+		go func() {
+			jobs[i](in, out)
+			close(out)
+		}()
+		return out
+	}
+
+	outs := make([]chan interface{}, 0)
+	for i := 0; i < 5; i++ {
+		outs = append(outs, calc(2, calc(1, in)))
+	}
+
+	merge := func(cs ...chan interface{}) chan interface{} {
+		var wg sync.WaitGroup
+		out := make(chan interface{})
+
+		// Start an output goroutine for each input channel in cs.  output
+		// copies values from c to out until c is closed, then calls wg.Done.
+		output := func(c <-chan interface{}) {
+			for n := range c {
+				out <- n
 			}
-		}(workerInput)
+			wg.Done()
+		}
+		wg.Add(len(cs))
+		for _, c := range cs {
+			go output(c)
+		}
+
+		// Start a goroutine to close out once all the output goroutines are
+		// done.  This must start after the wg.Add call.
+		go func() {
+			wg.Wait()
+			close(out)
+		}()
+		return out
 	}
 
-	works := make(chan interface{}, 100)
-	jobs[0](nil, works)
-	close(works)
-
-	for data := range works {
-		workerInput <- data
-	}
-	close(workerInput)
-
-	go func() {
-		jobs[len(jobs)-1](combination, nil)
-		close(combination)
-	}()
+	jobs[len(jobs)-1](merge(outs...), nil)
 
 	// in := make(chan interface{})
 	// out := make(chan interface{})
