@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"time"
 )
 
 type job func(in, out chan interface{})
@@ -18,8 +19,24 @@ func main() {
 			out <- 3
 		}),
 		job(func(in, out chan interface{}) {
+			wg := &sync.WaitGroup{}
+			res := make(chan interface{}, 100)
+			start := time.Now()
 			for val := range in {
-				out <- val.(int) + 1
+				data := val.(int) + 1
+				wg.Add(1)
+				go func() {
+					time.Sleep(time.Second)
+					res <- data
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+			close(res)
+			end := time.Since(start)
+			fmt.Println(end)
+			for r := range res {
+				out <- r
 			}
 		}),
 		job(func(in, out chan interface{}) {
@@ -39,73 +56,16 @@ func main() {
 		}),
 	}
 
-	gen := func() chan interface{} {
-		out := make(chan interface{})
-		go func() {
-			jobs[0](nil, out)
-			close(out)
-		}()
-		return out
-	}
+	in := make(chan interface{})
+	out := make(chan interface{})
 
-	in := gen()
-
-	calc := func(i int, in chan interface{}) chan interface{} {
-		out := make(chan interface{})
-		go func() {
+	for i := 0; i < len(jobs); i++ {
+		in, out = out, make(chan interface{})
+		go func(i int, in, out chan interface{}) {
 			jobs[i](in, out)
 			close(out)
-		}()
-		return out
+		}(i, in, out)
 	}
 
-	outs := make([]chan interface{}, 0)
-	for i := 0; i < 100; i++ {
-		out := in
-		for j := 1; j < len(jobs)-1; j++ {
-			out = calc(j, out)
-		}
-		outs = append(outs, out)
-	}
-
-	merge := func(cs ...chan interface{}) chan interface{} {
-		var wg sync.WaitGroup
-		out := make(chan interface{})
-
-		// Start an output goroutine for each input channel in cs.  output
-		// copies values from c to out until c is closed, then calls wg.Done.
-		output := func(c <-chan interface{}) {
-			for n := range c {
-				out <- n
-			}
-			wg.Done()
-		}
-		wg.Add(len(cs))
-		for _, c := range cs {
-			go output(c)
-		}
-
-		// Start a goroutine to close out once all the output goroutines are
-		// done.  This must start after the wg.Add call.
-		go func() {
-			wg.Wait()
-			close(out)
-		}()
-		return out
-	}
-
-	jobs[len(jobs)-1](merge(outs...), nil)
-
-	// in := make(chan interface{})
-	// out := make(chan interface{})
-
-	// for i := 0; i < len(jobs); i++ {
-	// 	in, out = out, make(chan interface{})
-	// 	go func(i int, in, out chan interface{}) {
-	// 		jobs[i](in, out)
-	// 		close(out)
-	// 	}(i, in, out)
-	// }
-
-	// fmt.Scanln()
+	fmt.Scanln()
 }
