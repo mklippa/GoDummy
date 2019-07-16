@@ -20,14 +20,21 @@ func main() {
 		}),
 		job(func(in, out chan interface{}) {
 			wg := &sync.WaitGroup{}
+			mu := &sync.Mutex{}
 			res := make(chan interface{}, 100)
 			start := time.Now()
 			for val := range in {
 				data := val.(int) + 1
 				wg.Add(1)
 				go func() {
-					time.Sleep(time.Second)
-					res <- data
+					crc32md5 := make(chan int, 1)
+					go func(res chan<- int) {
+						mu.Lock()
+						time.Sleep(1 * time.Second)
+						res <- data
+						mu.Unlock()
+					}(crc32md5)
+					res <- (<-crc32md5)
 					wg.Done()
 				}()
 			}
