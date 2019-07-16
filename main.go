@@ -60,8 +60,12 @@ func main() {
 	}
 
 	outs := make([]chan interface{}, 0)
-	for i := 0; i < 5; i++ {
-		outs = append(outs, calc(2, calc(1, in)))
+	for i := 0; i < 100; i++ {
+		out := in
+		for j := 1; j < len(jobs)-1; j++ {
+			out = calc(j, out)
+		}
+		outs = append(outs, out)
 	}
 
 	merge := func(cs ...chan interface{}) chan interface{} {
