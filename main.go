@@ -27,14 +27,14 @@ func main() {
 				go func() {
 					for val := range in {
 						data := val.(int) + 1
-						// crc32md5 := make(chan int, 1)
-						// go func(res chan<- int) {
-						// 	mu.Lock()
-						time.Sleep(1 * time.Second)
-						res <- data
-						// 	mu.Unlock()
-						// }(crc32md5)
-						// res <- (<-crc32md5)
+						crc32md5 := make(chan int, 1)
+						go func(res chan<- int) {
+							// 	mu.Lock()
+							time.Sleep(1 * time.Second)
+							res <- data
+							// 	mu.Unlock()
+						}(crc32md5)
+						res <- (<-crc32md5)
 					}
 					wg.Done()
 				}()
